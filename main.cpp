@@ -4,7 +4,8 @@
 #include <set>
 #include <vector>
 #include <algorithm>
-#define lambda '~'
+#include <utility>
+#define lambda '$'
 
 class Automaton{
 private:
@@ -55,41 +56,69 @@ public:
     }
 
     void print(){
-        std::cout<<numberOfStates<<std::endl;
+        std::cout<<"#states"<<std::endl;
         for(auto i: states){
-            std::cout<<i<<" ";
+            std::cout<<'s'<<i<<std::endl;
         }
-        std::cout<<std::endl;
 
-        std::cout<<"Start state: "<<startState<<std::endl;
+        std::cout<<"#initial\ns"<<startState<<std::endl;
 
-        std::cout<<"Final state: "<<finalState<<std::endl;
+        std::cout<<"#accepting\ns"<<finalState<<std::endl;
 
-        std::cout<<"Transitions: "<<std::endl;
+        std::cout<<"#alphabet\n";
+        for(auto i: alphabet){
+            if(i != lambda)
+                std::cout<<i<<std::endl;
+        }
+
+        std::cout<<"#transitions"<<std::endl;
         for(int i = 0; i < 256; i++){
             for(int j = 0; j < 256; j++){
                 if(alphabet.find((char)j) != alphabet.end()){
                     if(!transitionTable[i][j].empty()){
-                        std::cout<<i<<" "<<(char) j<<" {";
+                        std::cout<<'s'<<i<<":"<<(char) j<<">";
                         for(auto k: transitionTable[i][j]){
-                            std::cout<<k<<" ";
+                            std::cout<<'s'<<k<<",";
                         }
-                        std::cout<<"}"<<std::endl;
+                        std::cout<<"\b \n";
                     }
 
                 }
             }
         }
     }
+/*
+    void convertToNFA(){
+        for(int i = 0; i < lastID; i++){
+            if(!transitionTable[i]['~'].empty()){
+                // compute a vector of edges that end in the first state
+                std::vector<std::pair<int, int>> incoming;
+                for(int j = 0; j < lastID; j++){
+                    for(int k = 0; k < 256; k++){
+                        if(std::find(transitionTable[j][k].begin(), transitionTable[j][k].end(), i) != transitionTable[j][k].end()){
+                            incoming.push_back(std::make_pair(j, k));
+                        }
+                    }
+                }
+                for(auto j: transitionTable[i]['~']){
+                    for(auto k: incoming){
+                        addTransition(k.first, k.second, j);
+                    }
+                }
+                transitionTable[i]['~'].clear();
+            }
+        }
+    }
+    */
 
-    friend Automaton& connect(Automaton&, Automaton&);
+    friend Automaton& Connect(Automaton&, Automaton&);
     friend Automaton& Union(Automaton&, Automaton&);
-    friend Automaton& star(Automaton&);
+    friend Automaton& Star(Automaton&);
 };
 
 int Automaton::lastID = 0;
 
-Automaton& connect(Automaton &a, Automaton &b){
+Automaton& Connect(Automaton &a, Automaton &b){
     Automaton *c = new Automaton;
 
     c->alphabet = a.alphabet;
@@ -109,7 +138,7 @@ Automaton& connect(Automaton &a, Automaton &b){
                                             b.transitionTable[i][j].begin(), b.transitionTable[i][j].end());
         }
 
-    c->transitionTable[a.finalState][lambda].push_back(b.startState);
+    c->addTransition(a.finalState, lambda, b.startState);
 
     return *c;
 }
@@ -137,16 +166,16 @@ Automaton& Union(Automaton &a, Automaton &b){
                                             b.transitionTable[i][j].begin(), b.transitionTable[i][j].end());
         }
 
-    c->transitionTable[c->startState][lambda].push_back(a.startState);
-    c->transitionTable[c->startState][lambda].push_back(b.startState);
+    c->addTransition(c->startState, lambda, a.startState);
+    c->addTransition(c->startState, lambda, b.startState);
 
-    c->transitionTable[a.finalState][lambda].push_back(c->finalState);
-    c->transitionTable[b.finalState][lambda].push_back(c->finalState);
+    c->addTransition(a.finalState, lambda, c->finalState);
+    c->addTransition(b.finalState, lambda, c->finalState);
 
     return *c;
 }
 
-Automaton& star(Automaton &a){
+Automaton& Star(Automaton &a){
     Automaton *c = new Automaton;
 
     c->alphabet = a.alphabet;
@@ -164,10 +193,10 @@ Automaton& star(Automaton &a){
             c->transitionTable[i][j] = a.transitionTable[i][j];
         }
 
-    c->transitionTable[c->startState][lambda].push_back(a.startState);
-    c->transitionTable[c->startState][lambda].push_back(c->finalState);
-    c->transitionTable[c->finalState][lambda].push_back(a.startState);
-    c->transitionTable[a.finalState][lambda].push_back(c->finalState);
+    c->addTransition(c->startState, lambda, a.startState);
+    c->addTransition(c->startState, lambda, c->finalState);
+    c->addTransition(c->finalState, lambda, a.startState);
+    c->addTransition(a.finalState, lambda, c->finalState);
 
     return *c;
 }
@@ -195,9 +224,9 @@ private:
     void initPrecedence(){
         for(int i = 0; i < 256; i++)
             if((char) i == '+')
-                precedence[i] = 1;
-            else if((char) i == '|')
                 precedence[i] = 2;
+            else if((char) i == '|')
+                precedence[i] = 1;
             else if((char) i == '*')
                 precedence[i] = 3;
             else
@@ -255,6 +284,10 @@ private:
                 exp.insert(i+1, "+");
                 i++;
             }
+            if(exp[i] == '*' && exp[i+1] == '('){
+                exp.insert(i+1, "+");
+                i++;
+            }
         }
     }
 
@@ -273,16 +306,7 @@ private:
         return *tmp;
     }
 
-public:
-    RegularExpression(std::string &s){
-        initPrecedence();
-        exp = s;
-        addConcats();
-        infixToPostfix();
-    }
-
     void convert(){
-
         for(int i = 0; i < exp.length(); i++){
             if(isCharacter(exp[i])){
                 opStack.push(atomic(exp[i]));
@@ -295,7 +319,7 @@ public:
                     Automaton t2 = opStack.top();
                     opStack.pop();
 
-                    matcher = connect(t2, t1);
+                    matcher = Connect(t2, t1);
 
                     opStack.push(matcher);
                 }
@@ -313,18 +337,26 @@ public:
                     Automaton t1 = opStack.top();
                     opStack.pop();
 
-                    matcher = star(t1);
+                    matcher = Star(t1);
                     opStack.push(matcher);
                 }
             }
         }
-
-        matcher.print();
-
     }
 
-    std::string getExpression(){
-        return exp;
+public:
+    RegularExpression(std::string &s){
+        initPrecedence();
+        exp = s;
+        addConcats();
+        std::cout<<exp<<std::endl;
+        infixToPostfix();
+        std::cout<<exp<<std::endl;
+        convert();
+    }
+
+    void printAutomaton(){
+        matcher.print();
     }
 };
 
@@ -334,11 +366,7 @@ int main(){
     std::cin>>exp;
     RegularExpression reg(exp);
 
-    reg.convert();
-
-    Automaton a;
-
-
+    reg.printAutomaton();
 
     return 0;
 }
